@@ -13,10 +13,12 @@ from sklearn.metrics import confusion_matrix
 from sklearn.metrics import classification_report
 import joblib
 
-from sklearn.linear_model import LogisticRegression
-from sklearn.naive_bayes import GaussianNB
+from sklearn.linear_model import LogisticRegression, PassiveAggressiveClassifier, SGDClassifier, Perceptron
+from sklearn.naive_bayes import GaussianNB, BernoulliNB, MultinomialNB
 from sklearn.svm import SVC
 from sklearn.ensemble import RandomForestClassifier
+
+class_weight = 'balanced'
 
 
 def read_data(path):
@@ -25,8 +27,8 @@ def read_data(path):
         return None
     logger.log(df.shape)
     logger.log(df)
-    target = ravel(df[["star_level"]].astype('int').to_numpy())
-    data = df.drop(["star_level", "uid"], axis=1).to_dict("records")
+    target = ravel(df[[run_type + "_level"]].astype('int').to_numpy())
+    data = df.drop([run_type + "_level", "uid"], axis=1).to_dict("records")
     return data, target
 
 
@@ -41,8 +43,8 @@ def to_feature(data, target):
 
 
 def to_npy():
-    data, target = read_data("data/processed_data/star_train.csv")
-    predict_data, no_need = read_data("data/processed_data/star_test.csv")
+    data, target = read_data("data/processed_data/" + run_type + "_train.csv")
+    predict_data, no_need = read_data("data/processed_data/" + run_type + "_test.csv")
     print(target)
     feature_data, label_data = to_feature(data + predict_data, target)
     train_feature = feature_data[:len(data)]
@@ -51,9 +53,9 @@ def to_npy():
     print(len(predict_data))
     print(len(train_feature))
     print(len(predict_feature))
-    np.save("data/npy/star_train_feature", train_feature)
-    np.save("data/npy/star_train_label", label_data)
-    np.save("data/npy/star_predict_feature", predict_feature)
+    np.save("data/npy/" + run_type + "_train_feature", train_feature)
+    np.save("data/npy/" + run_type + "_train_label", label_data)
+    np.save("data/npy/" + run_type + "_predict_feature", predict_feature)
 
 
 def load_npy(feature_path, label_path):
@@ -74,17 +76,16 @@ def divide_train_test(feature, label):
 
 
 def voting_train(x_train, x_test, y_train, y_test):
-    # scalier = preprocessing.StandardScaler().fit(x_train)
-    # data_scaled = scalier.transform(x_train)
-    clf1 = LogisticRegression(max_iter=50000)
+    clf1 = LogisticRegression(max_iter=10000)
     clf2 = GaussianNB()
     clf3 = SVC(kernel='rbf', probability=True)
     clf4 = RandomForestClassifier(n_estimators=500, max_leaf_nodes=16, n_jobs=-1)
 
     vote_clf = VotingClassifier(estimators=[('lr', clf1), ('GNB', clf2), ('SVM', clf3), ('RFC', clf4)], voting='soft')
+    # vote_clf = VotingClassifier(estimators=[('SVM', clf3), ('RFC', clf4)], voting='soft')
 
     vote_clf.fit(x_train, y_train)
-    joblib.dump(vote_clf, "data/model/" + run_type + "_" + "vote.model")
+    joblib.dump(vote_clf, "data/model/" + run_type + "_2" + "vote.model")
     y_predict = vote_clf.predict(x_test)
     logger.log(y_predict)
     score = vote_clf.score(x_test, y_test)
@@ -97,15 +98,15 @@ def voting_train(x_train, x_test, y_train, y_test):
 
 def single_train(clf_type, x_train, x_test, y_train, y_test):
     if clf_type == "LR":
-        clf = LogisticRegression(max_iter=50000)
+        clf = LogisticRegression(max_iter=10000, class_weight=class_weight)
     elif clf_type == "GNB":
         clf = GaussianNB()
     elif clf_type == "SVM":
-        clf = SVC(kernel='rbf', probability=True)
+        clf = SVC(kernel='rbf', probability=True, class_weight=class_weight)
     elif clf_type == "RFC":
-        clf = RandomForestClassifier(n_estimators=500, max_leaf_nodes=16, n_jobs=-1)
+        clf = RandomForestClassifier(n_estimators=500, max_leaf_nodes=16, n_jobs=-1, class_weight=class_weight)
     else:
-        clf = LogisticRegression(max_iter=10000)
+        clf = LogisticRegression(max_iter=10000, class_weight=class_weight)
     clf.fit(x_train, y_train)
     joblib.dump(clf, "data/model/" + run_type + "_" + clf_type + ".model")
     y_predict = clf.predict(x_test)
@@ -118,29 +119,24 @@ def single_train(clf_type, x_train, x_test, y_train, y_test):
     logger.log(report)
 
 
-def print_np(array):
-    i = 0
-    for x in array:
-        i += 1
-        if i == 500:
-            break
-        print(x, end=", ")
-    print()
-
-
 run_type = "star"
 
 if __name__ == '__main__':
-    # to_npy()
-    feature_data, label_data = load_npy("data/npy/star_train_feature.npy", "data/npy/star_train_label.npy")
     # fake_data = load_iris()
     # feature_data, label_data = fake_data.data, fake_data.target
+
+    # to_npy()
+    feature_data, label_data = load_npy("data/npy/" + run_type + "_train_feature.npy",
+                                        "data/npy/" + run_type + "_train_label.npy")
     x_train, x_test, y_train, y_test = divide_train_test(feature_data, label_data)
 
+    logger.log("=" * 50 + "vote" + "=" * 50)
     voting_train(x_train, x_test, y_train, y_test)
-    single_train("LR", x_train, x_test, y_train, y_test)
-    single_train("GNB", x_train, x_test, y_train, y_test)
-    single_train("SVM", x_train, x_test, y_train, y_test)
-    single_train("RFC", x_train, x_test, y_train, y_test)
-    # print(label_data)
-    # predict("data/model/vote.model", feature_data)
+    # logger.log("=" * 50 + "LR" + "=" * 50)
+    # single_train("LR", x_train, x_test, y_train, y_test)
+    # logger.log("=" * 50 + "GNB" + "=" * 50)
+    # single_train("GNB", x_train, x_test, y_train, y_test)
+    # logger.log("=" * 50 + "SVM" + "=" * 50)
+    # single_train("SVM", x_train, x_test, y_train, y_test)
+    # logger.log("=" * 50 + "RFC" + "=" * 50)
+    # single_train("RFC", x_train, x_test, y_train, y_test)

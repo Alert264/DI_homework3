@@ -1,2 +1,6 @@
 .idea
-data
+data/raw_data
+data/processed_data
+data/csv_data
+data/npy
+data.zip
